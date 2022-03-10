@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.4.1/lib/p5.js"></script>
+    <script src="words.js"></script>
+    <script>
+        let playerSize = 50
+        let score = 0
+        let gameOver = false
+        let directions = ['UP', 'DOWN', 'LEFT', 'RIGHT']
+        let enemies = []
+        let bullets = []
+        let heard = ''
+        let currentWords = {
+            UP: getRandomWord(),
+            DOWN: getRandomWord(),
+            LEFT: getRandomWord(),
+            RIGHT: getRandomWord()
+        }
+
+        function setup() {
+            createCanvas(1000, 1000)
+            frameRate(30)
+            setInterval(() => {
+                enemies.push(new Enemy(random(directions), width/4, width/2))
+            }, random(2000, 5000))
+        }
+
+        function draw() {
+            background('black')
+            translate(width/2, height/2)
+
+            fill('white')
+            textSize(24)
+            textAlign(RIGHT)
+            text(`Score: ${score}`, width/2-20, height/2-20)
+
+            if(!gameOver) {
+                fill('white')
+                circle(0, 0, playerSize)
+
+                for(let enemy of enemies) {
+                    enemy.move()
+                    enemy.touchedPlayer()
+                    enemy.display()
+                }
+
+                for(let bullet of bullets) {
+                    if(!bullet.spent) {
+                        bullet.move()
+                        bullet.touchedEnemy()
+                        bullet.display()
+                    }
+                }
+
+                fill('white')
+                textSize(24)
+                textAlign(CENTER)
+                text(currentWords.UP, 0, -height/2+48)
+                text(currentWords.DOWN, 0, height/2-48)
+                textAlign(RIGHT)
+                text(currentWords.RIGHT, width/2-48, 0)
+                textAlign(LEFT)
+                text(currentWords.LEFT, -width/2+48, 0)
+
+                fill('green')
+                if(heard) text(`We heard "${heard}"`, -width/2+20, height/2-20)
+            } else {
+                fill('white')
+                textSize(36)
+                textAlign(CENTER)
+                text(`Game over! Score: ${score}`, 0, 0)
+            }
+        }
+
+        function keyPressed() {
+            if(key == 'ArrowLeft') bullets.push(new Bullet('LEFT'))
+            if(key == 'ArrowRight') bullets.push(new Bullet('RIGHT'))
+            if(key == 'ArrowUp') bullets.push(new Bullet('UP'))
+            if(key == 'ArrowDown') bullets.push(new Bullet('DOWN'))
+        }
+
+        class Enemy {
+            constructor(direction, distance) {
+                this.direction = direction
+                this.size = 25
+                this.x = 0
+                this.y = 0
+
+                if(this.direction == 'UP') this.y = -Math.abs(distance)
+                if(this.direction == 'RIGHT') this.x = distance
+                if(this.direction == 'DOWN') this.y = distance
+                if(this.direction == 'LEFT') this.x = -Math.abs(distance)
+            }
+
+            move() {
+                if(this.direction == 'UP') this.y++
+                if(this.direction == 'RIGHT') this.x--
+                if(this.direction == 'DOWN') this.y--
+                if(this.direction == 'LEFT') this.x++
+            }
+
+            touchedPlayer() {
+                const d = dist(this.x, this.y, 0, 0)
+                if(d < (playerSize/2) + (this.size/2)) gameOver = true
+            }
+
+            display() {
+                fill('gray')
+                ellipse(this.x, this.y, this.size)
+            }
+        }
+
+        class Bullet {
+            constructor(direction) {
+                this.direction = direction
+                this.size = 5
+                this.speed = 6
+                this.x = 0
+                this.y = 0
+                this.spent = false
+            }
+
+            move() {
+                if(this.direction == 'UP') this.y -= this.speed
+                if(this.direction == 'RIGHT') this.x += this.speed
+                if(this.direction == 'DOWN') this.y += this.speed
+                if(this.direction == 'LEFT') this.x -= this.speed
+            }
+
+            touchedEnemy() {
+                for(let enemy of enemies) {
+                    const d = dist(enemy.x, enemy.y, this.x, this.y)
+                    if(d < (this.size/2) + (enemy.size/2)) {
+                        enemies = enemies.filter(e => e != enemy)
+                        this.spent = true
+                        score++
+                        currentWords[enemy.direction] = getRandomWord()
+                    }
+                }
+            }
+
+            display() {
+                fill('red')
+                ellipse(this.x, this.y, this.size)
+            }
+        }
+
+        function getRandomWord() {
+            return words[Math.floor(Math.random() * 42812)]
+        }
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+            if (!MediaRecorder.isTypeSupported('audio/webm')) return alert('Browser not supported')
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+            const socket = new WebSocket('wss://api.deepgram.com/v1/listen', [ 'token', 'YOUR-DEEPGRAM-API-KEY' ])
+
+            socket.onopen = () => {
+                mediaRecorder.addEventListener('dataavailable', async (event) => {
+                    if (event.data.size > 0 && socket.readyState == 1) socket.send(event.data)
+                })
+                mediaRecorder.start(1000)
+            }
+
+            socket.onmessage = (message) => {
+                const received = JSON.parse(message.data)
+                const transcript = received.channel.alternatives[0].transcript
+                if (transcript && received.is_final) {
+                    heard = transcript
+                    for(let direction in currentWords) {
+                        if(transcript.includes(currentWords[direction])) {
+                            bullets.push(new Bullet(direction))
+                        }
+                    }
+                }
+            }
+        })
+    </script>
+</body>
